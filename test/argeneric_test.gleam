@@ -28,16 +28,19 @@ pub fn argeneric_test() {
     |> argeneric.add_string_argument(
       "hello",
       Hello("default"),
+      None,
       fn(new_value: String) { Hello(new_value) },
     )
     |> argeneric.add_int_argument(
       "my_int",
       Hello("default"),
+      None,
       fn(new_value: Int) { Test(new_value) },
     )
     |> argeneric.add_string_argument(
       "enum",
       Enum(One),
+      None,
       fn(new_value: String) {
         case new_value {
           "one" -> Enum(One)
@@ -49,10 +52,12 @@ pub fn argeneric_test() {
     |> argeneric.add_string_argument(
       "no_default",
       NoDefault(None),
+      None,
       fn(new_value: String) { NoDefault(Some(new_value)) },
     )
     |> argeneric.add_mandatory_string_argument(
       "mandatory",
+      None,
       fn(new_value: String) { Mandatory(new_value) },
     )
 

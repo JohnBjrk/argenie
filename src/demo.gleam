@@ -9,7 +9,7 @@ pub fn main() {
   argeneric_test()
 }
 
-pub type Enumeration {
+pub type Numbers {
   One
   Two
   Three
@@ -18,9 +18,10 @@ pub type Enumeration {
 pub type MyArg {
   Hello(value: String)
   Test(value: Int)
-  Enum(value: Enumeration)
+  Number(value: Numbers)
   NoDefault(value: Option(String))
   Mandatory(value: String)
+  Verbose(value: Bool)
 }
 
 pub fn argeneric_test() {
@@ -29,48 +30,57 @@ pub fn argeneric_test() {
     |> argeneric.add_string_argument(
       "hello",
       Hello("default"),
+      None,
       fn(new_value: String) { Hello(new_value) },
     )
     |> argeneric.add_int_argument(
       "my_int",
-      Hello("default"),
+      Test(42),
+      argeneric.range(40, 45),
       fn(new_value: Int) { Test(new_value) },
     )
     |> argeneric.add_string_argument(
       "enum",
-      Enum(One),
+      Number(One),
+      argeneric.one_of(["one", "two", "three"]),
       fn(new_value: String) {
         case new_value {
-          "one" -> Enum(One)
-          "two" -> Enum(Two)
-          "three" -> Enum(Three)
+          "one" -> Number(One)
+          "two" -> Number(Two)
+          "three" -> Number(Three)
         }
       },
     )
     |> argeneric.add_string_argument(
       "no_default",
       NoDefault(None),
+      None,
       fn(new_value: String) { NoDefault(Some(new_value)) },
     )
     |> argeneric.add_mandatory_string_argument(
       "mandatory",
+      None,
       fn(new_value: String) { Mandatory(new_value) },
+    )
+    |> argeneric.add_bool_argument(
+      "verbose",
+      Verbose(False),
+      fn(new_value: Bool) { Verbose(new_value) },
     )
 
   let updated_args =
     args
     |> argeneric.populate_with_string_value("hello", "yes")
-    // |> argeneric.populate_with_int_value("my_int", 42)
-    // |> argeneric.populate_with_string_value("enum", "two")
     |> argeneric.populate_with_string_value("no_default", "provided")
-    // |> argeneric.populate_with_string_value("mandatory", "added it")
-    // |> argeneric.parse([
-    //   "--enum=two", "--my_int=44", "--mandatory=\"test mandatory\"",
-    // ])
-    // |> argeneric.parse(["--enum=two", "--my_int=44"])
     |> argeneric.parse(erlang.start_arguments())
-    // |> io.debug()
     |> argeneric.halt_on_error()
+
+  let assert Number(enum_value) =
+    updated_args
+    |> argeneric.get_value("enum")
+
+  enum_value
+  |> io.debug()
 
   let assert Hello(hello_value) =
     updated_args
@@ -84,13 +94,6 @@ pub fn argeneric_test() {
     |> argeneric.get_value("my_int")
 
   test_value
-  |> io.debug()
-
-  let assert Enum(enum_value) =
-    updated_args
-    |> argeneric.get_value("enum")
-
-  enum_value
   |> io.debug()
 
   let assert NoDefault(no_default_value) =
@@ -107,6 +110,10 @@ pub fn argeneric_test() {
   mandatory_value
   |> io.debug()
 
-  updated_args
-  |> argeneric.parse(["--apa=bepa"])
+  let assert Verbose(verbose) =
+    updated_args
+    |> argeneric.get_value("verbose")
+
+  verbose
+  |> io.debug()
 }

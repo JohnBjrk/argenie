@@ -5,15 +5,18 @@ import gleam/regex.{Match}
 import gleam/io
 import gleam/int
 import gleam/result
+import gleam/string
 
 pub type Box {
   StringBox(value: String)
   IntBox(value: Int)
+  BoolBox(value: Bool)
 }
 
 pub type ArgType {
   StringArg
   IntArg
+  BoolArg
 }
 
 pub fn string_updater(update: fn(String) -> a) {
@@ -34,6 +37,15 @@ pub fn int_updater(update: fn(Int) -> a) {
   }
 }
 
+pub fn bool_updater(update: fn(Bool) -> a) {
+  fn(a: Option(a), box: Box) {
+    case box {
+      BoolBox(bool_value) -> Some(update(bool_value))
+      _ -> a
+    }
+  }
+}
+
 pub fn one_of(valid_strings: List(String)) {
   Some(fn(box: Box) {
     case box {
@@ -43,10 +55,25 @@ pub fn one_of(valid_strings: List(String)) {
           |> list.contains(string_value)
         {
           True -> Ok(Nil)
-          False -> Error("Invalid value (enum)")
+          False ->
+            Error(Validation(InvalidStringValue(string_value, valid_strings)))
         }
       }
-      IntBox(_) -> Ok(Nil)
+      _ -> Ok(Nil)
+    }
+  })
+}
+
+pub fn range(min: Int, max: Int) {
+  Some(fn(box: Box) {
+    case box {
+      IntBox(int_value) -> {
+        case int_value >= min && int_value < max {
+          True -> Ok(Nil)
+          False -> Error(Validation(NotInRange(int_value, min, max)))
+        }
+      }
+      _ -> Ok(Nil)
     }
   })
 }
@@ -54,11 +81,14 @@ pub fn one_of(valid_strings: List(String)) {
 type Argument(a) {
   Argument(
     arg: Option(a),
-    validate_arg: Option(fn(Box) -> Result(Nil, String)),
+    validate_arg: Validator,
     update_arg: fn(Option(a), Box) -> Option(a),
     arg_type: ArgType,
   )
 }
+
+type Validator =
+  Option(fn(Box) -> Result(Nil, ArgenieError))
 
 type ArgumentMap(a) =
   Map(String, Argument(a))
@@ -70,11 +100,17 @@ pub opaque type Argenie(a) {
 pub type ArgenieError {
   ParseError(expected_arg_type: ArgType, raw_value: String)
   MandatoryMissing
+  Validation(error: ValidationError)
   Other(message: String)
 }
 
 pub type ParseErrors =
   Map(String, ArgenieError)
+
+pub type ValidationError {
+  InvalidStringValue(value: String, valid_values: List(String))
+  NotInRange(value: Int, min: Int, max: Int)
+}
 
 pub fn new() -> Argenie(a) {
   Argenie(map.new())
@@ -84,13 +120,14 @@ pub fn add_string_argument(
   argenie: Argenie(a),
   name: String,
   argument: a,
+  validator: Validator,
   update: fn(String) -> a,
 ) -> Argenie(a) {
   Argenie(
     argenie.argument_map
     |> map.insert(
       name,
-      Argument(Some(argument), None, string_updater(update), StringArg),
+      Argument(Some(argument), validator, string_updater(update), StringArg),
     ),
   )
 }
@@ -98,11 +135,15 @@ pub fn add_string_argument(
 pub fn add_mandatory_string_argument(
   argenie: Argenie(a),
   name: String,
+  validator: Validator,
   update: fn(String) -> a,
 ) -> Argenie(a) {
   Argenie(
     argenie.argument_map
-    |> map.insert(name, Argument(None, None, string_updater(update), StringArg)),
+    |> map.insert(
+      name,
+      Argument(None, validator, string_updater(update), StringArg),
+    ),
   )
 }
 
@@ -110,13 +151,14 @@ pub fn add_int_argument(
   argenie: Argenie(a),
   name: String,
   argument: a,
+  validator: Validator,
   update: fn(Int) -> a,
 ) -> Argenie(a) {
   Argenie(
     argenie.argument_map
     |> map.insert(
       name,
-      Argument(Some(argument), None, int_updater(update), IntArg),
+      Argument(Some(argument), validator, int_updater(update), IntArg),
     ),
   )
 }
@@ -124,11 +166,27 @@ pub fn add_int_argument(
 pub fn add_mandatory_int_argument(
   argenie: Argenie(a),
   name: String,
+  validator: Validator,
   update: fn(Int) -> a,
 ) -> Argenie(a) {
   Argenie(
     argenie.argument_map
-    |> map.insert(name, Argument(None, None, int_updater(update), IntArg)),
+    |> map.insert(name, Argument(None, validator, int_updater(update), IntArg)),
+  )
+}
+
+pub fn add_bool_argument(
+  argenie: Argenie(a),
+  name: String,
+  argument: a,
+  update: fn(Bool) -> a,
+) -> Argenie(a) {
+  Argenie(
+    argenie.argument_map
+    |> map.insert(
+      name,
+      Argument(Some(argument), None, bool_updater(update), BoolArg),
+    ),
   )
 }
 
@@ -235,6 +293,24 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
             )
           MandatoryMissing ->
             io.println("Missing mandatory flag: \"" <> arg_name <> "\"")
+          Validation(error) -> {
+            io.println("Validation error for flag \"" <> arg_name <> "\"")
+            case error {
+              InvalidStringValue(value, valid_values) ->
+                io.println(
+                  "\tInvalid string value. Got: \"" <> value <> "\", expected: " <> string.join(
+                    valid_values,
+                    ",",
+                  ),
+                )
+              NotInRange(value, min, max) ->
+                io.println(
+                  "\tValue x = " <> int.to_string(value) <> " not in range: " <> int.to_string(
+                    min,
+                  ) <> " <= x < " <> int.to_string(max),
+                )
+            }
+          }
           Other(message) -> io.println(message)
         }
       })
@@ -248,6 +324,7 @@ fn arg_type(arg_type: ArgType) -> String {
   case arg_type {
     StringArg -> "string"
     IntArg -> "integer"
+    BoolArg -> "boolean"
   }
 }
 
@@ -266,32 +343,51 @@ fn parse_arg(
         |> map.get(arg_name)
       {
         Ok(argument) -> {
+          let validate =
+            argument.validate_arg
+            |> option.unwrap(fn(_) { Ok(Nil) })
           let updated_argument = case argument.arg_type {
-            StringArg ->
-              Ok(
-                Argument(
-                  ..argument,
-                  arg: argument.update_arg(argument.arg, StringBox(arg_value)),
-                ),
-              )
-            IntArg -> {
-              case int.parse(arg_value) {
-                Ok(int_value) ->
+            StringArg -> {
+              case validate(StringBox(arg_value)) {
+                Ok(_) -> {
                   Ok(
                     Argument(
                       ..argument,
-                      arg: argument.update_arg(argument.arg, IntBox(int_value)),
+                      arg: argument.update_arg(
+                        argument.arg,
+                        StringBox(arg_value),
+                      ),
                     ),
                   )
+                }
+                Error(err) -> Error(map.from_list([#(arg_name, err)]))
+              }
+            }
+
+            IntArg -> {
+              case int.parse(arg_value) {
+                Ok(int_value) ->
+                  case validate(IntBox(int_value)) {
+                    Ok(_) -> {
+                      Ok(
+                        Argument(
+                          ..argument,
+                          arg: argument.update_arg(
+                            argument.arg,
+                            IntBox(int_value),
+                          ),
+                        ),
+                      )
+                    }
+                    Error(err) -> Error(map.from_list([#(arg_name, err)]))
+                  }
                 Error(_) ->
-                  // Error(
-                  //   "Could not parse flag: --" <> arg_name <> "=" <> arg_value <> " as an integer",
-                  // )
                   Error(map.from_list([
                     #(arg_name, ParseError(argument.arg_type, arg_value)),
                   ]))
               }
             }
+            _ -> Ok(argument)
           }
           case updated_argument {
             Ok(updated_argument) -> {
@@ -304,6 +400,33 @@ fn parse_arg(
         }
 
         Error(_) -> Ok(argument_map)
+      }
+    }
+    [Match(_, [None, None, Some(arg_name)])] -> {
+      case
+        argument_map
+        |> map.get(arg_name)
+      {
+        Ok(argument) -> {
+          let validate =
+            argument.validate_arg
+            |> option.unwrap(fn(_) { Ok(Nil) })
+          case validate(BoolBox(True)) {
+            Ok(_) -> {
+              argument_map
+              |> map.insert(
+                arg_name,
+                Argument(
+                  ..argument,
+                  arg: argument.update_arg(argument.arg, BoolBox(True)),
+                ),
+              )
+              |> Ok
+            }
+            Error(err) -> Error(map.from_list([#(arg_name, err)]))
+          }
+        }
+        _ -> Ok(argument_map)
       }
     }
     other -> {
