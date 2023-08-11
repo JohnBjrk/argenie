@@ -262,7 +262,6 @@ pub fn parse2(
     0 -> Ok(Argenie(argument_map))
     _ -> Error(errors)
   }
-  |> io.debug()
   |> check_mandatory()
 }
 
@@ -285,7 +284,7 @@ fn do_parse2(
         |> list.drop(list.length(values))
       let #(argument_map_rest, errors_rest) =
         do_parse2(argument_map, errors, remaining_arguments)
-      case parse_arg(argument_map, current_argument) {
+      case parse_arg(argument_map, current_argument, values) {
         Ok(#(arg_name, updated_argument)) -> #(
           argument_map_rest
           |> map.insert(arg_name, updated_argument),
@@ -325,9 +324,7 @@ fn check_mandatory(
             let assert #(arg_name, arg) = entry
             case arg.arg {
               Some(_) -> parse_errors
-              None -> // parse_errors
-              // |> map.insert(arg_name, MandatoryMissing)
-              [#(arg_name, MandatoryMissing), ..parse_errors]
+              None -> [#(arg_name, MandatoryMissing), ..parse_errors]
             }
           },
         )
@@ -423,6 +420,7 @@ fn arg_type(arg_type: ArgType) -> String {
 fn parse_arg(
   argument_map: ArgumentMap(a),
   arg: String,
+  values: List(String),
 ) -> Result(#(String, Argument(a)), ParseErrors) {
   let assert Ok(arg_re) = regex.from_string("--(\\w+)=\"?([^\"]+)\"?|--(\\w+)")
   case
@@ -485,14 +483,6 @@ fn parse_arg(
           }
         }
 
-        // case updated_argument {
-        //   Ok(updated_argument) -> {
-        //     argument_map
-        //     |> map.insert(arg_name, updated_argument)
-        //     |> Ok
-        //   }
-        //   Error(msg) -> Error(msg)
-        // }
         Error(_) -> Error([#("UNKNOWN", UnknownArgument)])
       }
     }
@@ -505,24 +495,65 @@ fn parse_arg(
           let validate =
             argument.validate_arg
             |> option.unwrap(fn(_) { Ok(Nil) })
-          case validate(BoolBox(True)) {
-            Ok(_) -> {
-              // argument_map
-              // |> map.insert(
-              //   arg_name,
-              #(
-                arg_name,
-                Argument(
-                  ..argument,
-                  arg: argument.update_arg(argument.arg, BoolBox(True)),
-                ),
-              )
-              // ),
-              |> Ok
+          case argument.arg_type, values {
+            BoolArg, _ -> {
+              case validate(BoolBox(True)) {
+                Ok(_) -> {
+                  #(
+                    arg_name,
+                    Argument(
+                      ..argument,
+                      arg: argument.update_arg(argument.arg, BoolBox(True)),
+                    ),
+                  )
+                  |> Ok
+                }
+                Error(err) -> Error([#(arg_name, err)])
+              }
             }
-            Error(err) -> Error([#(arg_name, err)])
+            StringArg, [arg_value, ..] -> {
+              case validate(StringBox(arg_value)) {
+                Ok(_) -> {
+                  Ok(#(
+                    arg_name,
+                    Argument(
+                      ..argument,
+                      arg: argument.update_arg(
+                        argument.arg,
+                        StringBox(arg_value),
+                      ),
+                    ),
+                  ))
+                }
+                Error(err) -> Error([#(arg_name, err)])
+              }
+            }
+            IntArg, [arg_value, ..] -> {
+              case int.parse(arg_value) {
+                Ok(int_value) ->
+                  case validate(IntBox(int_value)) {
+                    Ok(_) -> {
+                      Ok(#(
+                        arg_name,
+                        Argument(
+                          ..argument,
+                          arg: argument.update_arg(
+                            argument.arg,
+                            IntBox(int_value),
+                          ),
+                        ),
+                      ))
+                    }
+                    Error(err) -> Error([#(arg_name, err)])
+                  }
+                Error(_) ->
+                  Error([#(arg_name, ParseError(argument.arg_type, arg_value))])
+              }
+            }
+            _, _ -> Ok(#(arg_name, argument))
           }
         }
+
         _ -> Error([#("UNKNOWN", UnknownArgument)])
       }
     }
