@@ -96,57 +96,57 @@ pub fn argeneric_test() {
       Ar,
     )
 
-  let updated_args =
+  let parsed_args =
     args
     |> argeneric.parse(erlang.start_arguments())
     |> argeneric.halt_on_error()
 
   let assert Number(enum_value) =
-    updated_args
+    parsed_args
     |> argeneric.get_value("enum")
 
   enum_value
   |> io.debug()
 
   let assert Hello(hello_value) =
-    updated_args
+    parsed_args
     |> argeneric.get_value("hello")
 
   hello_value
   |> io.debug()
 
   let assert Test(test_value) =
-    updated_args
+    parsed_args
     |> argeneric.get_value("my_int")
 
   test_value
   |> io.debug()
 
   let assert NoDefault(no_default_value) =
-    updated_args
+    parsed_args
     |> argeneric.get_value("no_default")
 
   no_default_value
   |> io.debug()
 
   let assert Mandatory(mandatory_value) =
-    updated_args
+    parsed_args
     |> argeneric.get_value("mandatory")
 
   mandatory_value
   |> io.debug()
 
   let assert Verbose(verbose) =
-    updated_args
+    parsed_args
     |> argeneric.get_value("verbose")
 
   verbose
   |> io.debug()
 
-  updated_args
+  parsed_args
   |> argeneric.get_value("big_int")
   |> io.debug()
-  updated_args
+  parsed_args
   |> argeneric.get_value("ar")
   |> io.debug()
 }
