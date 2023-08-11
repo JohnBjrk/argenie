@@ -68,7 +68,7 @@ pub fn argeneric_test() {
     // |> argeneric.populate_with_string_value("enum", "two")
     |> argeneric.populate_with_string_value("no_default", "provided")
     |> argeneric.populate_with_string_value("mandatory", "added it")
-    |> argeneric.parse(["--enum=two", "--my_int=44"])
+    |> argeneric.parse2(["--enum=two", "--my_int=44"])
     |> argeneric.halt_on_error()
 
   let assert Hello(hello_value) =
@@ -107,5 +107,5 @@ pub fn argeneric_test() {
   |> io.debug()
 
   updated_args
-  |> argeneric.parse(["--apa=bepa"])
+  |> argeneric.parse2(["--apa=bepa"])
 }

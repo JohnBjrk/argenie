@@ -98,7 +98,7 @@ pub fn argeneric_test() {
 
   let parsed_args =
     args
-    |> argeneric.parse(erlang.start_arguments())
+    |> argeneric.parse2(erlang.start_arguments())
     |> argeneric.halt_on_error()
 
   let assert Number(enum_value) =

@@ -128,6 +128,7 @@ pub opaque type Argenie(a) {
 }
 
 pub type ArgenieError {
+  UnknownArgument
   ParseError(expected_arg_type: ArgType, raw_value: String)
   MandatoryMissing
   Validation(error: ValidationError)
@@ -252,39 +253,62 @@ pub fn populate_with_string_value(
   )
 }
 
-pub fn parse2(argenie: Argenie(a), arguments: List(String)) -> Argenie(a) {
-  let #(argenie, _) = do_parse2(argenie, arguments)
-  argenie
+pub fn parse2(
+  argenie: Argenie(a),
+  arguments: List(String),
+) -> Result(Argenie(a), ParseErrors) {
+  let #(argument_map, errors) = do_parse2(argenie.argument_map, [], arguments)
+  case list.length(errors) {
+    0 -> Ok(Argenie(argument_map))
+    _ -> Error(errors)
+  }
+  |> io.debug()
+  |> check_mandatory()
 }
 
-fn do_parse2(argenie: Argenie(a), arguments) -> #(Argenie(a), List(String)) {
+fn do_parse2(
+  argument_map: ArgumentMap(a),
+  errors: ParseErrors,
+  arguments: List(String),
+) -> #(ArgumentMap(a), ParseErrors) {
   case arguments {
-    [] -> #(argenie, arguments)
+    [] -> #(argument_map, errors)
     [current_argument, ..arguments] -> {
       let values =
         arguments
         |> list.take_while(fn(argument) {
           argument
-          |> string.starts_with("--")
+          |> string.starts_with("--") != True
         })
       let remaining_arguments =
         arguments
         |> list.drop(list.length(values))
-      let updated_argument_map =
-        parse_arg(argenie.argument_map, current_argument)
-      todo
+      let #(argument_map_rest, errors_rest) =
+        do_parse2(argument_map, errors, remaining_arguments)
+      case parse_arg(argument_map, current_argument) {
+        Ok(#(arg_name, updated_argument)) -> #(
+          argument_map_rest
+          |> map.insert(arg_name, updated_argument),
+          errors_rest,
+        )
+        Error(new_errors) -> #(
+          argument_map_rest,
+          new_errors
+          |> list.append(errors_rest),
+        )
+      }
     }
   }
 }
 
-pub fn parse(
-  argenie: Argenie(a),
-  arguments: List(String),
-) -> Result(Argenie(a), ParseErrors) {
-  argenie
-  |> update_values(arguments)
-  |> check_mandatory()
-}
+// pub fn parse(
+//   argenie: Argenie(a),
+//   arguments: List(String),
+// ) -> Result(Argenie(a), ParseErrors) {
+//   argenie
+//   |> update_values(arguments)
+//   |> check_mandatory()
+// }
 
 fn check_mandatory(
   argenie: Result(Argenie(a), ParseErrors),
@@ -318,38 +342,36 @@ fn check_mandatory(
   }
 }
 
-fn update_values(
-  argenie: Argenie(a),
-  arguments: List(String),
-) -> Result(Argenie(a), ParseErrors) {
-  let updated_argument_map =
-    arguments
-    |> list.fold_until(
-      Ok(argenie.argument_map),
-      fn(argument_map_result, arg) {
-        let assert Ok(argument_map) = argument_map_result
-        case
-          argument_map
-          |> parse_arg(arg)
-        {
-          Ok(_) as argument_map_result -> Continue(argument_map_result)
-          Error(_) as err -> Stop(err)
-        }
-      },
-    )
-  case updated_argument_map {
-    Ok(updated_argument_map) -> Ok(Argenie(argument_map: updated_argument_map))
-    Error(msg) -> Error(msg)
-  }
-}
+// fn update_values(
+//   argenie: Argenie(a),
+//   arguments: List(String),
+// ) -> Result(Argenie(a), ParseErrors) {
+//   let updated_argument_map =
+//     arguments
+//     |> list.fold_until(
+//       Ok(argenie.argument_map),
+//       fn(argument_map_result, arg) {
+//         let assert Ok(argument_map) = argument_map_result
+//         case
+//           argument_map
+//           |> parse_arg(arg)
+//         {
+//           Ok(_) as argument_map_result -> Continue(argument_map_result)
+//           Error(_) as err -> Stop(err)
+//         }
+//       },
+//     )
+//   case updated_argument_map {
+//     Ok(updated_argument_map) -> Ok(Argenie(argument_map: updated_argument_map))
+//     Error(msg) -> Error(msg)
+//   }
+// }
 
 pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
   case argenie_result {
     Ok(argenie) -> argenie
     Error(parse_errors) -> {
-      // io.println(message)
       parse_errors
-      // |> map.to_list()
       |> list.each(fn(entry) {
         let assert #(arg_name, error) = entry
         case error {
@@ -381,6 +403,7 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
             }
           }
           Other(message) -> io.println(message)
+          UnknownArgument -> io.println("UNKNOWN ARGUMENT")
         }
       })
       halt(1)
@@ -400,7 +423,7 @@ fn arg_type(arg_type: ArgType) -> String {
 fn parse_arg(
   argument_map: ArgumentMap(a),
   arg: String,
-) -> Result(ArgumentMap(a), ParseErrors) {
+) -> Result(#(String, Argument(a)), ParseErrors) {
   let assert Ok(arg_re) = regex.from_string("--(\\w+)=\"?([^\"]+)\"?|--(\\w+)")
   case
     arg_re
@@ -457,16 +480,20 @@ fn parse_arg(
             _ -> Ok(argument)
           }
           case updated_argument {
-            Ok(updated_argument) -> {
-              argument_map
-              |> map.insert(arg_name, updated_argument)
-              |> Ok
-            }
-            Error(msg) -> Error(msg)
+            Ok(argument) -> Ok(#(arg_name, argument))
+            Error(err) -> Error(err)
           }
         }
 
-        Error(_) -> Ok(argument_map)
+        // case updated_argument {
+        //   Ok(updated_argument) -> {
+        //     argument_map
+        //     |> map.insert(arg_name, updated_argument)
+        //     |> Ok
+        //   }
+        //   Error(msg) -> Error(msg)
+        // }
+        Error(_) -> Error([#("UNKNOWN", UnknownArgument)])
       }
     }
     [Match(_, [None, None, Some(arg_name)])] -> {
@@ -480,20 +507,23 @@ fn parse_arg(
             |> option.unwrap(fn(_) { Ok(Nil) })
           case validate(BoolBox(True)) {
             Ok(_) -> {
-              argument_map
-              |> map.insert(
+              // argument_map
+              // |> map.insert(
+              //   arg_name,
+              #(
                 arg_name,
                 Argument(
                   ..argument,
                   arg: argument.update_arg(argument.arg, BoolBox(True)),
                 ),
               )
+              // ),
               |> Ok
             }
             Error(err) -> Error([#(arg_name, err)])
           }
         }
-        _ -> Ok(argument_map)
+        _ -> Error([#("UNKNOWN", UnknownArgument)])
       }
     }
     other -> {
