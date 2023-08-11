@@ -135,7 +135,7 @@ pub type ArgenieError {
 }
 
 pub type ParseErrors =
-  Map(String, ArgenieError)
+  List(#(String, ArgenieError))
 
 pub type ValidationError {
   InvalidStringValue(value: String, valid_values: List(String))
@@ -252,6 +252,31 @@ pub fn populate_with_string_value(
   )
 }
 
+pub fn parse2(argenie: Argenie(a), arguments: List(String)) -> Argenie(a) {
+  let #(argenie, _) = do_parse2(argenie, arguments)
+  argenie
+}
+
+fn do_parse2(argenie: Argenie(a), arguments) -> #(Argenie(a), List(String)) {
+  case arguments {
+    [] -> #(argenie, arguments)
+    [current_argument, ..arguments] -> {
+      let values =
+        arguments
+        |> list.take_while(fn(argument) {
+          argument
+          |> string.starts_with("--")
+        })
+      let remaining_arguments =
+        arguments
+        |> list.drop(list.length(values))
+      let updated_argument_map =
+        parse_arg(argenie.argument_map, current_argument)
+      todo
+    }
+  }
+}
+
 pub fn parse(
   argenie: Argenie(a),
   arguments: List(String),
@@ -271,20 +296,20 @@ fn check_mandatory(
         argenie.argument_map
         |> map.to_list()
         |> list.fold(
-          map.new(),
+          [],
           fn(parse_errors, entry) {
             let assert #(arg_name, arg) = entry
             case arg.arg {
               Some(_) -> parse_errors
-              None ->
-                parse_errors
-                |> map.insert(arg_name, MandatoryMissing)
+              None -> // parse_errors
+              // |> map.insert(arg_name, MandatoryMissing)
+              [#(arg_name, MandatoryMissing), ..parse_errors]
             }
           },
         )
       case
         errors
-        |> map.size()
+        |> list.length()
       {
         0 -> Ok(argenie)
         _ -> Error(errors)
@@ -324,7 +349,7 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
     Error(parse_errors) -> {
       // io.println(message)
       parse_errors
-      |> map.to_list()
+      // |> map.to_list()
       |> list.each(fn(entry) {
         let assert #(arg_name, error) = entry
         case error {
@@ -404,7 +429,7 @@ fn parse_arg(
                     ),
                   )
                 }
-                Error(err) -> Error(map.from_list([#(arg_name, err)]))
+                Error(err) -> Error([#(arg_name, err)])
               }
             }
 
@@ -423,12 +448,10 @@ fn parse_arg(
                         ),
                       )
                     }
-                    Error(err) -> Error(map.from_list([#(arg_name, err)]))
+                    Error(err) -> Error([#(arg_name, err)])
                   }
                 Error(_) ->
-                  Error(map.from_list([
-                    #(arg_name, ParseError(argument.arg_type, arg_value)),
-                  ]))
+                  Error([#(arg_name, ParseError(argument.arg_type, arg_value))])
               }
             }
             _ -> Ok(argument)
@@ -467,7 +490,7 @@ fn parse_arg(
               )
               |> Ok
             }
-            Error(err) -> Error(map.from_list([#(arg_name, err)]))
+            Error(err) -> Error([#(arg_name, err)])
           }
         }
         _ -> Ok(argument_map)
@@ -476,7 +499,7 @@ fn parse_arg(
     other -> {
       other
       |> io.debug()
-      Error(map.from_list([#("UNKNOWN", Other("Unexpected regex scan result"))]))
+      Error([#("UNKNOWN", Other("Unexpected regex scan result"))])
     }
   }
 }
