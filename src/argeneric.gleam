@@ -78,6 +78,36 @@ pub fn range(min: Int, max: Int) {
   })
 }
 
+pub fn int_validator(validator: fn(Int) -> Result(Nil, String)) -> Validator {
+  Some(fn(box: Box) {
+    case box {
+      IntBox(int_value) -> {
+        case validator(int_value) {
+          Ok(Nil) -> Ok(Nil)
+          Error(message) -> Error(Validation(Custom(message)))
+        }
+      }
+      _ -> Ok(Nil)
+    }
+  })
+}
+
+pub fn string_validator(
+  validator: fn(String) -> Result(Nil, String),
+) -> Validator {
+  Some(fn(box: Box) {
+    case box {
+      StringBox(string_value) -> {
+        case validator(string_value) {
+          Ok(Nil) -> Ok(Nil)
+          Error(message) -> Error(Validation(Custom(message)))
+        }
+      }
+      _ -> Ok(Nil)
+    }
+  })
+}
+
 type Argument(a) {
   Argument(
     arg: Option(a),
@@ -110,6 +140,7 @@ pub type ParseErrors =
 pub type ValidationError {
   InvalidStringValue(value: String, valid_values: List(String))
   NotInRange(value: Int, min: Int, max: Int)
+  Custom(message: String)
 }
 
 pub fn new() -> Argenie(a) {
@@ -187,6 +218,18 @@ pub fn add_bool_argument(
       name,
       Argument(Some(argument), None, bool_updater(update), BoolArg),
     ),
+  )
+}
+
+// TODO: Does this make sense - if booleans always default to false
+pub fn add_mandatory_bool_argument(
+  argenie: Argenie(a),
+  name: String,
+  update: fn(Bool) -> a,
+) -> Argenie(a) {
+  Argenie(
+    argenie.argument_map
+    |> map.insert(name, Argument(None, None, bool_updater(update), BoolArg)),
   )
 }
 
@@ -309,6 +352,7 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
                     min,
                   ) <> " <= x < " <> int.to_string(max),
                 )
+              Custom(message) -> io.println("\t" <> message)
             }
           }
           Other(message) -> io.println(message)

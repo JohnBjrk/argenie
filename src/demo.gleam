@@ -1,9 +1,10 @@
 import gleeunit
 import gleeunit/should
-import argeneric
+import argeneric.{Custom, Validation}
 import gleam/io
 import gleam/option.{None, Option, Some}
 import gleam/erlang
+import gleam/string
 
 pub fn main() {
   argeneric_test()
@@ -22,6 +23,8 @@ pub type MyArg {
   NoDefault(value: Option(String))
   Mandatory(value: String)
   Verbose(value: Bool)
+  Big(value: Int)
+  Ar(value: String)
 }
 
 pub fn argeneric_test() {
@@ -67,11 +70,34 @@ pub fn argeneric_test() {
       Verbose(False),
       fn(new_value: Bool) { Verbose(new_value) },
     )
+    |> argeneric.add_int_argument(
+      "big_int",
+      Big(5),
+      argeneric.int_validator(fn(value) {
+        case value > 0 {
+          True -> Ok(Nil)
+          False -> Error("Value need to be greater than 0")
+        }
+      }),
+      fn(new_value) { Big(new_value) },
+    )
+    |> argeneric.add_string_argument(
+      "ar",
+      Ar("argh"),
+      argeneric.string_validator(fn(value) {
+        case
+          value
+          |> string.starts_with("ar")
+        {
+          True -> Ok(Nil)
+          False -> Error("Needs to start with: ar")
+        }
+      }),
+      Ar,
+    )
 
   let updated_args =
     args
-    |> argeneric.populate_with_string_value("hello", "yes")
-    |> argeneric.populate_with_string_value("no_default", "provided")
     |> argeneric.parse(erlang.start_arguments())
     |> argeneric.halt_on_error()
 
@@ -115,5 +141,12 @@ pub fn argeneric_test() {
     |> argeneric.get_value("verbose")
 
   verbose
+  |> io.debug()
+
+  updated_args
+  |> argeneric.get_value("big_int")
+  |> io.debug()
+  updated_args
+  |> argeneric.get_value("ar")
   |> io.debug()
 }
