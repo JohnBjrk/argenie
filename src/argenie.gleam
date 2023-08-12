@@ -233,25 +233,6 @@ pub fn add_mandatory_bool_argument(
   )
 }
 
-pub fn populate_with_string_value(
-  argenie: Argenie(a),
-  name: String,
-  string_value: String,
-) -> Argenie(a) {
-  let assert Ok(argument) =
-    argenie.argument_map
-    |> map.get(name)
-  let updated_argument =
-    Argument(
-      ..argument,
-      arg: argument.update_arg(argument.arg, StringBox(string_value)),
-    )
-  Argenie(
-    argenie.argument_map
-    |> map.insert(name, updated_argument),
-  )
-}
-
 pub fn parse(
   argenie: Argenie(a),
   arguments: List(String),
@@ -516,25 +497,6 @@ fn parse_validate_and_update_argument(
     }
     Error(_) -> Error([#(arg_name, ParseError(argument.arg_type, value))])
   }
-}
-
-pub fn populate_with_int_value(
-  argenie: Argenie(a),
-  name: String,
-  int_value: Int,
-) -> Argenie(a) {
-  let assert Ok(argument) =
-    argenie.argument_map
-    |> map.get(name)
-  let updated_argument =
-    Argument(
-      ..argument,
-      arg: argument.update_arg(argument.arg, IntBox(int_value)),
-    )
-  Argenie(
-    argenie.argument_map
-    |> map.insert(name, updated_argument),
-  )
 }
 
 pub fn get_value(argenie: Argenie(a), name: String) {
