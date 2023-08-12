@@ -256,7 +256,7 @@ pub fn parse(
   argenie: Argenie(a),
   arguments: List(String),
 ) -> Result(Argenie(a), ParseErrors) {
-  let #(argument_map, errors) = do_parse2(argenie.argument_map, [], arguments)
+  let #(argument_map, errors) = do_parse(argenie.argument_map, [], arguments)
   case list.length(errors) {
     0 -> Ok(Argenie(argument_map))
     _ -> Error(errors)
@@ -264,7 +264,7 @@ pub fn parse(
   |> check_mandatory()
 }
 
-fn do_parse2(
+fn do_parse(
   argument_map: ArgumentMap(a),
   errors: ParseErrors,
   arguments: List(String),
@@ -282,7 +282,7 @@ fn do_parse2(
         arguments
         |> list.drop(list.length(values))
       let #(argument_map_rest, errors_rest) =
-        do_parse2(argument_map, errors, remaining_arguments)
+        do_parse(argument_map, errors, remaining_arguments)
       case parse_arg(argument_map, current_argument, values) {
         Ok(#(arg_name, updated_argument)) -> #(
           argument_map_rest
@@ -298,15 +298,6 @@ fn do_parse2(
     }
   }
 }
-
-// pub fn parse(
-//   argenie: Argenie(a),
-//   arguments: List(String),
-// ) -> Result(Argenie(a), ParseErrors) {
-//   argenie
-//   |> update_values(arguments)
-//   |> check_mandatory()
-// }
 
 fn check_mandatory(
   argenie: Result(Argenie(a), ParseErrors),
@@ -337,31 +328,6 @@ fn check_mandatory(
     }
   }
 }
-
-// fn update_values(
-//   argenie: Argenie(a),
-//   arguments: List(String),
-// ) -> Result(Argenie(a), ParseErrors) {
-//   let updated_argument_map =
-//     arguments
-//     |> list.fold_until(
-//       Ok(argenie.argument_map),
-//       fn(argument_map_result, arg) {
-//         let assert Ok(argument_map) = argument_map_result
-//         case
-//           argument_map
-//           |> parse_arg(arg)
-//         {
-//           Ok(_) as argument_map_result -> Continue(argument_map_result)
-//           Error(_) as err -> Stop(err)
-//         }
-//       },
-//     )
-//   case updated_argument_map {
-//     Ok(updated_argument_map) -> Ok(Argenie(argument_map: updated_argument_map))
-//     Error(msg) -> Error(msg)
-//   }
-// }
 
 pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
   case argenie_result {
@@ -432,53 +398,32 @@ fn parse_arg(
         |> map.get(arg_name)
       {
         Ok(argument) -> {
-          let validate =
-            argument.validate_arg
-            |> option.unwrap(fn(_) { Ok(Nil) })
-          let updated_argument = case argument.arg_type {
-            StringArg -> {
-              case validate(StringBox(arg_value)) {
-                Ok(_) -> {
-                  Ok(
-                    Argument(
-                      ..argument,
-                      arg: argument.update_arg(
-                        argument.arg,
-                        StringBox(arg_value),
-                      ),
-                    ),
-                  )
-                }
-                Error(err) -> Error([#(arg_name, err)])
-              }
-            }
-
-            IntArg -> {
-              case int.parse(arg_value) {
-                Ok(int_value) ->
-                  case validate(IntBox(int_value)) {
-                    Ok(_) -> {
-                      Ok(
-                        Argument(
-                          ..argument,
-                          arg: argument.update_arg(
-                            argument.arg,
-                            IntBox(int_value),
-                          ),
-                        ),
-                      )
-                    }
-                    Error(err) -> Error([#(arg_name, err)])
-                  }
-                Error(_) ->
-                  Error([#(arg_name, ParseError(argument.arg_type, arg_value))])
-              }
-            }
-            _ -> Ok(argument)
-          }
-          case updated_argument {
-            Ok(argument) -> Ok(#(arg_name, argument))
-            Error(err) -> Error(err)
+          case argument.arg_type {
+            BoolArg ->
+              parse_validate_and_update_argument(
+                arg_name,
+                argument,
+                "true",
+                parse_bool,
+                BoolBox,
+              )
+            StringArg ->
+              parse_validate_and_update_argument(
+                arg_name,
+                argument,
+                arg_value,
+                parse_string,
+                StringBox,
+              )
+            IntArg ->
+              parse_validate_and_update_argument(
+                arg_name,
+                argument,
+                arg_value,
+                int.parse,
+                IntBox,
+              )
+            _ -> Ok(#(arg_name, argument))
           }
         }
 
@@ -491,64 +436,31 @@ fn parse_arg(
         |> map.get(arg_name)
       {
         Ok(argument) -> {
-          let validate =
-            argument.validate_arg
-            |> option.unwrap(fn(_) { Ok(Nil) })
           case argument.arg_type, values {
-            BoolArg, _ -> {
-              case validate(BoolBox(True)) {
-                Ok(_) -> {
-                  #(
-                    arg_name,
-                    Argument(
-                      ..argument,
-                      arg: argument.update_arg(argument.arg, BoolBox(True)),
-                    ),
-                  )
-                  |> Ok
-                }
-                Error(err) -> Error([#(arg_name, err)])
-              }
-            }
-            StringArg, [arg_value, ..] -> {
-              case validate(StringBox(arg_value)) {
-                Ok(_) -> {
-                  Ok(#(
-                    arg_name,
-                    Argument(
-                      ..argument,
-                      arg: argument.update_arg(
-                        argument.arg,
-                        StringBox(arg_value),
-                      ),
-                    ),
-                  ))
-                }
-                Error(err) -> Error([#(arg_name, err)])
-              }
-            }
-            IntArg, [arg_value, ..] -> {
-              case int.parse(arg_value) {
-                Ok(int_value) ->
-                  case validate(IntBox(int_value)) {
-                    Ok(_) -> {
-                      Ok(#(
-                        arg_name,
-                        Argument(
-                          ..argument,
-                          arg: argument.update_arg(
-                            argument.arg,
-                            IntBox(int_value),
-                          ),
-                        ),
-                      ))
-                    }
-                    Error(err) -> Error([#(arg_name, err)])
-                  }
-                Error(_) ->
-                  Error([#(arg_name, ParseError(argument.arg_type, arg_value))])
-              }
-            }
+            BoolArg, _ ->
+              parse_validate_and_update_argument(
+                arg_name,
+                argument,
+                "true",
+                parse_bool,
+                BoolBox,
+              )
+            StringArg, [arg_value, ..] ->
+              parse_validate_and_update_argument(
+                arg_name,
+                argument,
+                arg_value,
+                parse_string,
+                StringBox,
+              )
+            IntArg, [arg_value, ..] ->
+              parse_validate_and_update_argument(
+                arg_name,
+                argument,
+                arg_value,
+                int.parse,
+                IntBox,
+              )
             _, _ -> Ok(#(arg_name, argument))
           }
         }
@@ -561,6 +473,48 @@ fn parse_arg(
       |> io.debug()
       Error([#("UNKNOWN", Other("Unexpected regex scan result"))])
     }
+  }
+}
+
+fn parse_bool(raw_value: String) -> Result(Bool, Nil) {
+  case raw_value {
+    "True" | "true" -> Ok(True)
+    "False" | "false" -> Ok(False)
+    _ -> Error(Nil)
+  }
+}
+
+fn parse_string(raw_value) -> Result(String, Nil) {
+  Ok(raw_value)
+}
+
+fn parse_validate_and_update_argument(
+  arg_name: String,
+  argument: Argument(a),
+  value: String,
+  parse: fn(String) -> Result(b, Nil),
+  boxer: fn(b) -> Box,
+) {
+  case parse(value) {
+    Ok(parsed_value) -> {
+      let validate =
+        argument.validate_arg
+        |> option.unwrap(fn(_) { Ok(Nil) })
+      case validate(boxer(parsed_value)) {
+        Ok(_) -> {
+          #(
+            arg_name,
+            Argument(
+              ..argument,
+              arg: argument.update_arg(argument.arg, boxer(parsed_value)),
+            ),
+          )
+          |> Ok
+        }
+        Error(err) -> Error([#(arg_name, err)])
+      }
+    }
+    Error(_) -> Error([#(arg_name, ParseError(argument.arg_type, value))])
   }
 }
 
