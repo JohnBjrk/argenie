@@ -1,10 +1,9 @@
-import gleam/list.{Continue, Stop}
+import gleam/list
 import gleam/map.{Map}
 import gleam/option.{None, Option, Some}
 import gleam/regex.{Match}
 import gleam/io
 import gleam/int
-import gleam/result
 import gleam/string
 
 pub type Box {
@@ -253,7 +252,7 @@ pub fn populate_with_string_value(
   )
 }
 
-pub fn parse2(
+pub fn parse(
   argenie: Argenie(a),
   arguments: List(String),
 ) -> Result(Argenie(a), ParseErrors) {
