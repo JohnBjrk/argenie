@@ -361,7 +361,7 @@ fn to_generic(argument_map: ArgumentMap(a)) -> GenericArgumentMap {
     let #(arg_name, argument) = entry
     #(
       arg_name,
-      GenericArgument(argument.arg_type, option.is_some(argument.arg)),
+      GenericArgument(argument.arg_type, option.is_none(argument.arg)),
     )
   })
   |> map.from_list
@@ -373,7 +373,18 @@ pub fn parse(
   argenie: Argenie(a),
   arguments: List(String),
 ) -> Result(Argenie(a), ParseErrors) {
-  let #(argument_map, errors) = do_parse(argenie.argument_map, [], arguments)
+  let #(argument_map, errors) = case arguments {
+    ["--help", ..] -> #(
+      argenie.argument_map,
+      [
+        ArgumentsHelp(
+          argenie.argument_map
+          |> to_generic,
+        ),
+      ],
+    )
+    arguments -> do_parse(argenie.argument_map, [], arguments)
+  }
   case list.length(errors) {
     0 -> Ok(Argenie(argument_map))
     _ -> Error(errors)
