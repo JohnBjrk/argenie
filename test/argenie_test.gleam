@@ -133,7 +133,7 @@ pub fn mandatory_set_test() {
 pub fn mandatory_not_set_test() {
   setup_args()
   |> argenie.parse([])
-  |> should.equal(Error([#("mandatory", MandatoryMissing)]))
+  |> should.equal(Error([MandatoryMissing("mandatory")]))
 }
 
 pub fn optional_string_set_test() {
@@ -171,13 +171,13 @@ pub fn int_not_set_test() {
 pub fn int_validation_failed_test() {
   setup_args()
   |> argenie.parse(["--mandatory=was_set", "--my_int=46"])
-  |> should.equal(Error([#("my_int", Validation(NotInRange(46, 40, 45)))]))
+  |> should.equal(Error([Validation("my_int", NotInRange(46, 40, 45))]))
 }
 
 pub fn int_parse_error_test() {
   setup_args()
   |> argenie.parse(["--mandatory=was_set", "--my_int=4r"])
-  |> should.equal(Error([#("my_int", ParseError(IntArg, "4r"))]))
+  |> should.equal(Error([ParseError("my_int", IntArg, "4r")]))
 }
 
 pub fn no_default_set_test() {
@@ -216,7 +216,7 @@ pub fn number_invalid_test() {
   setup_args()
   |> argenie.parse(["--mandatory=was_set", "--number=five"])
   |> should.equal(Error([
-    #("number", Validation(InvalidStringValue("five", ["one", "two", "three"]))),
+    Validation("number", InvalidStringValue("five", ["one", "two", "three"])),
   ]))
 }
 
@@ -232,7 +232,7 @@ pub fn custom_int_validation_failed_test() {
   setup_args()
   |> argenie.parse(["--mandatory=was_set", "--big=0"])
   |> should.equal(Error([
-    #("big", Validation(Custom("Value need to be greater than 0"))),
+    Validation("big", Custom("Value need to be greater than 0")),
   ]))
 }
 
@@ -263,7 +263,7 @@ pub fn custom_string_validation_success_test() {
 pub fn custom_string_validation_failed_test() {
   setup_args()
   |> argenie.parse(["--mandatory=was_set", "--ar=barkis"])
-  |> should.equal(Error([#("ar", Validation(Custom("Needs to start with: ar")))]))
+  |> should.equal(Error([Validation("ar", Custom("Needs to start with: ar"))]))
 }
 
 // TODO: These are all different experiments on how to provide a decent api for adding commands
@@ -272,7 +272,8 @@ pub fn custom_string_validation_failed_test() {
 // or it will force the user code to deal with the commands and then there is no good way to provide
 // built-in help for which commands are available
 //
-// Maybe one option could be to provide only a function to print commands in the same style as other 
+//
+// Maybe one option could be to provide only a function to print commands in the same style as other
 // help from argenie (once there is some style added)
 pub fn subcommands_test() {
   let argenie1 = setup_args()

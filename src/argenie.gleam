@@ -46,7 +46,7 @@ pub fn bool_updater(update: fn(Bool) -> a) {
 }
 
 pub fn one_of(valid_strings: List(String)) {
-  Some(fn(box: Box) {
+  Some(fn(arg_name: String, box: Box) {
     case box {
       StringBox(string_value) -> {
         case
@@ -55,7 +55,10 @@ pub fn one_of(valid_strings: List(String)) {
         {
           True -> Ok(Nil)
           False ->
-            Error(Validation(InvalidStringValue(string_value, valid_strings)))
+            Error(Validation(
+              arg_name,
+              InvalidStringValue(string_value, valid_strings),
+            ))
         }
       }
       _ -> Ok(Nil)
@@ -64,12 +67,12 @@ pub fn one_of(valid_strings: List(String)) {
 }
 
 pub fn range(min: Int, max: Int) {
-  Some(fn(box: Box) {
+  Some(fn(arg_name: String, box: Box) {
     case box {
       IntBox(int_value) -> {
         case int_value >= min && int_value < max {
           True -> Ok(Nil)
-          False -> Error(Validation(NotInRange(int_value, min, max)))
+          False -> Error(Validation(arg_name, NotInRange(int_value, min, max)))
         }
       }
       _ -> Ok(Nil)
@@ -78,12 +81,12 @@ pub fn range(min: Int, max: Int) {
 }
 
 pub fn int_validator(validator: fn(Int) -> Result(Nil, String)) -> Validator {
-  Some(fn(box: Box) {
+  Some(fn(arg_name: String, box: Box) {
     case box {
       IntBox(int_value) -> {
         case validator(int_value) {
           Ok(Nil) -> Ok(Nil)
-          Error(message) -> Error(Validation(Custom(message)))
+          Error(message) -> Error(Validation(arg_name, Custom(message)))
         }
       }
       _ -> Ok(Nil)
@@ -94,12 +97,12 @@ pub fn int_validator(validator: fn(Int) -> Result(Nil, String)) -> Validator {
 pub fn string_validator(
   validator: fn(String) -> Result(Nil, String),
 ) -> Validator {
-  Some(fn(box: Box) {
+  Some(fn(arg_name: String, box: Box) {
     case box {
       StringBox(string_value) -> {
         case validator(string_value) {
           Ok(Nil) -> Ok(Nil)
-          Error(message) -> Error(Validation(Custom(message)))
+          Error(message) -> Error(Validation(arg_name, Custom(message)))
         }
       }
       _ -> Ok(Nil)
@@ -117,10 +120,17 @@ type Argument(a) {
 }
 
 type Validator =
-  Option(fn(Box) -> Result(Nil, ArgenieError))
+  Option(fn(String, Box) -> Result(Nil, ArgenieError))
 
 type ArgumentMap(a) =
   Map(String, Argument(a))
+
+pub type GenericArgument {
+  GenericArgument(arg_type: ArgType, mandatory: Bool)
+}
+
+pub type GenericArgumentMap =
+  Map(String, GenericArgument)
 
 pub opaque type Argenie(a) {
   Argenie(argument_map: ArgumentMap(a))
@@ -129,15 +139,16 @@ pub opaque type Argenie(a) {
 pub type ArgenieError {
   // TODO: Remove this if removing parse2_alt2
   CommandHelp(commands: List(String))
+  ArgumentsHelp(arguments: GenericArgumentMap)
   UnknownArgument
-  ParseError(expected_arg_type: ArgType, raw_value: String)
-  MandatoryMissing
-  Validation(error: ValidationError)
+  ParseError(arg_name: String, expected_arg_type: ArgType, raw_value: String)
+  MandatoryMissing(arg_name: String)
+  Validation(arg_name: String, error: ValidationError)
   Other(message: String)
 }
 
 pub type ParseErrors =
-  List(#(String, ArgenieError))
+  List(ArgenieError)
 
 pub type ValidationError {
   InvalidStringValue(value: String, valid_values: List(String))
@@ -205,7 +216,7 @@ pub fn parse2_alt2(
   ) = sub_commands
   case arguments {
     ["--help"] ->
-      Error([#("NO_NAME", CommandHelp([sub_command1, sub_command2]))])
+      Error([CommandHelp([sub_command1, sub_command2])])
       |> make_help_error
     [sub_command, ..sub_command_arguments] if sub_command == sub_command1 ->
       parse1(argenie1, sub_command_arguments)
@@ -343,6 +354,19 @@ pub fn add_mandatory_bool_argument(
   )
 }
 
+fn to_generic(argument_map: ArgumentMap(a)) -> GenericArgumentMap {
+  argument_map
+  |> map.to_list
+  |> list.map(fn(entry) {
+    let #(arg_name, argument) = entry
+    #(
+      arg_name,
+      GenericArgument(argument.arg_type, option.is_some(argument.arg)),
+    )
+  })
+  |> map.from_list
+}
+
 // TODO: Maybe rename this one to safe_parse (since it returns a result) and use the name
 // parse for a version that also does halt_on_error
 pub fn parse(
@@ -407,7 +431,7 @@ fn check_mandatory(
             let assert #(arg_name, arg) = entry
             case arg.arg {
               Some(_) -> parse_errors
-              None -> [#(arg_name, MandatoryMissing), ..parse_errors]
+              None -> [MandatoryMissing(arg_name), ..parse_errors]
             }
           },
         )
@@ -427,18 +451,17 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
     Ok(argenie) -> argenie
     Error(parse_errors) -> {
       parse_errors
-      |> list.each(fn(entry) {
-        let assert #(arg_name, error) = entry
+      |> list.each(fn(error) {
         case error {
-          ParseError(expected_type, raw_value) ->
+          ParseError(arg_name, expected_type, raw_value) ->
             io.println(
               "Could not parse flag: --" <> arg_name <> "=" <> raw_value <> " as " <> arg_type(
                 expected_type,
               ),
             )
-          MandatoryMissing ->
+          MandatoryMissing(arg_name) ->
             io.println("Missing mandatory flag: \"" <> arg_name <> "\"")
-          Validation(error) -> {
+          Validation(arg_name, error) -> {
             io.println("Validation error for flag \"" <> arg_name <> "\"")
             case error {
               InvalidStringValue(value, valid_values) ->
@@ -463,6 +486,11 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
           // TODO: Remove this if removing parse2_alt2
           CommandHelp(commands) ->
             io.println("Command help: " <> string.join(commands, ", "))
+          ArgumentsHelp(arguments) -> {
+            arguments
+            |> io.debug()
+            Nil
+          }
         }
       })
       halt(1)
@@ -524,7 +552,7 @@ fn parse_arg(
           }
         }
 
-        Error(_) -> Error([#("UNKNOWN", UnknownArgument)])
+        Error(_) -> Error([UnknownArgument])
       }
     }
     [Match(_, [None, None, Some(arg_name)])] -> {
@@ -562,13 +590,13 @@ fn parse_arg(
           }
         }
 
-        _ -> Error([#("UNKNOWN", UnknownArgument)])
+        _ -> Error([UnknownArgument])
       }
     }
     other -> {
       other
       |> io.debug()
-      Error([#("UNKNOWN", Other("Unexpected regex scan result"))])
+      Error([Other("Unexpected regex scan result")])
     }
   }
 }
@@ -596,8 +624,8 @@ fn parse_validate_and_update_argument(
     Ok(parsed_value) -> {
       let validate =
         argument.validate_arg
-        |> option.unwrap(fn(_) { Ok(Nil) })
-      case validate(boxer(parsed_value)) {
+        |> option.unwrap(fn(_, _) { Ok(Nil) })
+      case validate(arg_name, boxer(parsed_value)) {
         Ok(_) -> {
           #(
             arg_name,
@@ -608,10 +636,10 @@ fn parse_validate_and_update_argument(
           )
           |> Ok
         }
-        Error(err) -> Error([#(arg_name, err)])
+        Error(err) -> Error([err])
       }
     }
-    Error(_) -> Error([#(arg_name, ParseError(argument.arg_type, value))])
+    Error(_) -> Error([ParseError(arg_name, argument.arg_type, value)])
   }
 }
 
