@@ -5,6 +5,8 @@ import gleam/regex.{Match}
 import gleam/io
 import gleam/int
 import gleam/string
+import table.{AlignLeft, Content, StyledContent, Table}
+import gleam_community/ansi
 
 pub type Box {
   StringBox(value: String)
@@ -45,8 +47,8 @@ pub fn bool_updater(update: fn(Bool) -> a) {
   }
 }
 
-pub fn one_of(valid_strings: List(String)) {
-  Some(fn(arg_name: String, box: Box) {
+pub fn one_of(valid_strings: List(String)) -> Validator {
+  fn(arg_name: String, box: Box) {
     case box {
       StringBox(string_value) -> {
         case
@@ -63,11 +65,15 @@ pub fn one_of(valid_strings: List(String)) {
       }
       _ -> Ok(Nil)
     }
-  })
+  }
+  |> Validator(
+    valid_strings
+    |> string.join(", "),
+  )
 }
 
-pub fn range(min: Int, max: Int) {
-  Some(fn(arg_name: String, box: Box) {
+pub fn range(min: Int, max: Int) -> Validator {
+  fn(arg_name: String, box: Box) {
     case box {
       IntBox(int_value) -> {
         case int_value >= min && int_value < max {
@@ -77,11 +83,15 @@ pub fn range(min: Int, max: Int) {
       }
       _ -> Ok(Nil)
     }
-  })
+  }
+  |> Validator(int.to_string(min) <> " < x <= " <> int.to_string(max))
 }
 
-pub fn int_validator(validator: fn(Int) -> Result(Nil, String)) -> Validator {
-  Some(fn(arg_name: String, box: Box) {
+pub fn int_validator(
+  description: String,
+  validator: fn(Int) -> Result(Nil, String),
+) -> Validator {
+  fn(arg_name: String, box: Box) {
     case box {
       IntBox(int_value) -> {
         case validator(int_value) {
@@ -91,13 +101,15 @@ pub fn int_validator(validator: fn(Int) -> Result(Nil, String)) -> Validator {
       }
       _ -> Ok(Nil)
     }
-  })
+  }
+  |> Validator(description)
 }
 
 pub fn string_validator(
+  description: String,
   validator: fn(String) -> Result(Nil, String),
 ) -> Validator {
-  Some(fn(arg_name: String, box: Box) {
+  fn(arg_name: String, box: Box) {
     case box {
       StringBox(string_value) -> {
         case validator(string_value) {
@@ -107,7 +119,8 @@ pub fn string_validator(
       }
       _ -> Ok(Nil)
     }
-  })
+  }
+  |> Validator(description)
 }
 
 type Argument(a) {
@@ -119,14 +132,26 @@ type Argument(a) {
   )
 }
 
-type Validator =
-  Option(fn(String, Box) -> Result(Nil, ArgenieError))
+// type Validator =
+//   Option(fn(String, Box) -> Result(Nil, ArgenieError))
+
+pub type Validator {
+  NoValidation
+  Validator(
+    validate: fn(String, Box) -> Result(Nil, ArgenieError),
+    description: String,
+  )
+}
 
 type ArgumentMap(a) =
   Map(String, Argument(a))
 
 pub type GenericArgument {
-  GenericArgument(arg_type: ArgType, mandatory: Bool)
+  GenericArgument(
+    arg_type: ArgType,
+    validation: Option(String),
+    mandatory: Bool,
+  )
 }
 
 pub type GenericArgumentMap =
@@ -337,7 +362,7 @@ pub fn add_bool_argument(
     argenie.argument_map
     |> map.insert(
       name,
-      Argument(Some(argument), None, bool_updater(update), BoolArg),
+      Argument(Some(argument), NoValidation, bool_updater(update), BoolArg),
     ),
   )
 }
@@ -350,8 +375,18 @@ pub fn add_mandatory_bool_argument(
 ) -> Argenie(a) {
   Argenie(
     argenie.argument_map
-    |> map.insert(name, Argument(None, None, bool_updater(update), BoolArg)),
+    |> map.insert(
+      name,
+      Argument(None, NoValidation, bool_updater(update), BoolArg),
+    ),
   )
+}
+
+fn get_description(validator: Validator) -> Option(String) {
+  case validator {
+    NoValidation -> None
+    Validator(_, description) -> Some(description)
+  }
 }
 
 fn to_generic(argument_map: ArgumentMap(a)) -> GenericArgumentMap {
@@ -361,7 +396,11 @@ fn to_generic(argument_map: ArgumentMap(a)) -> GenericArgumentMap {
     let #(arg_name, argument) = entry
     #(
       arg_name,
-      GenericArgument(argument.arg_type, option.is_none(argument.arg)),
+      GenericArgument(
+        argument.arg_type,
+        get_description(argument.validate_arg),
+        option.is_none(argument.arg),
+      ),
     )
   })
   |> map.from_list
@@ -499,7 +538,64 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
             io.println("Command help: " <> string.join(commands, ", "))
           ArgumentsHelp(arguments) -> {
             arguments
-            |> io.debug()
+            |> map.to_list
+            |> list.sort(fn(entry1, entry2) {
+              let #(#(arg_name1, _), #(arg_name2, _)) = #(entry1, entry2)
+              arg_name1
+              |> string.compare(arg_name2)
+            })
+            |> list.map(fn(entry) {
+              let #(arg_name, argument) = entry
+              let arg_name_star = case argument.mandatory {
+                False -> arg_name
+                True -> arg_name <> "*"
+              }
+              let validation = case argument.validation {
+                None -> ""
+                Some(description) -> "(" <> description <> ")"
+              }
+              [
+                AlignLeft(Content("  "), 0),
+                AlignLeft(StyledContent("--" <> arg_name_star), 2),
+                AlignLeft(
+                  StyledContent(
+                    argument.arg_type
+                    |> arg_type
+                    |> ansi.cyan,
+                  ),
+                  2,
+                ),
+                AlignLeft(Content(validation), 2),
+              ]
+            })
+            |> list.prepend([
+              AlignLeft(Content("  "), 0),
+              AlignLeft(
+                StyledContent(
+                  "Flag"
+                  |> ansi.bold,
+                ),
+                2,
+              ),
+              AlignLeft(
+                StyledContent(
+                  "Type"
+                  |> ansi.bold,
+                ),
+                2,
+              ),
+              AlignLeft(
+                StyledContent(
+                  "Values"
+                  |> ansi.bold,
+                ),
+                2,
+              ),
+            ])
+            |> Table(None, _)
+            |> table.align_table
+            |> table.to_string
+            |> io.println
             Nil
           }
         }
@@ -624,6 +720,15 @@ fn parse_string(raw_value) -> Result(String, Nil) {
   Ok(raw_value)
 }
 
+fn get_validate(
+  validator: Validator,
+) -> fn(String, Box) -> Result(Nil, ArgenieError) {
+  case validator {
+    NoValidation -> fn(_, _) { Ok(Nil) }
+    Validator(validate, _) -> validate
+  }
+}
+
 fn parse_validate_and_update_argument(
   arg_name: String,
   argument: Argument(a),
@@ -635,7 +740,7 @@ fn parse_validate_and_update_argument(
     Ok(parsed_value) -> {
       let validate =
         argument.validate_arg
-        |> option.unwrap(fn(_, _) { Ok(Nil) })
+        |> get_validate
       case validate(arg_name, boxer(parsed_value)) {
         Ok(_) -> {
           #(

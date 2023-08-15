@@ -1,4 +1,4 @@
-import argenie
+import argenie.{NoValidation}
 import gleam/io
 import gleam/option.{None, Option, Some}
 import gleam/erlang
@@ -31,7 +31,7 @@ pub fn argeneric_test() {
     |> argenie.add_string_argument(
       "hello",
       Hello("default"),
-      None,
+      NoValidation,
       fn(new_value: String) { Hello(new_value) },
     )
     |> argenie.add_int_argument(
@@ -55,12 +55,12 @@ pub fn argeneric_test() {
     |> argenie.add_string_argument(
       "no_default",
       NoDefault(None),
-      None,
+      NoValidation,
       fn(new_value: String) { NoDefault(Some(new_value)) },
     )
     |> argenie.add_mandatory_string_argument(
       "mandatory",
-      None,
+      NoValidation,
       fn(new_value: String) { Mandatory(new_value) },
     )
     |> argenie.add_bool_argument(
@@ -71,26 +71,32 @@ pub fn argeneric_test() {
     |> argenie.add_int_argument(
       "big_int",
       Big(5),
-      argenie.int_validator(fn(value) {
-        case value > 0 {
-          True -> Ok(Nil)
-          False -> Error("Value need to be greater than 0")
-        }
-      }),
+      argenie.int_validator(
+        "x > 0",
+        fn(value) {
+          case value > 0 {
+            True -> Ok(Nil)
+            False -> Error("Value need to be greater than 0")
+          }
+        },
+      ),
       fn(new_value) { Big(new_value) },
     )
     |> argenie.add_string_argument(
       "ar",
       Ar("argh"),
-      argenie.string_validator(fn(value) {
-        case
-          value
-          |> string.starts_with("ar")
-        {
-          True -> Ok(Nil)
-          False -> Error("Needs to start with: ar")
-        }
-      }),
+      argenie.string_validator(
+        "Start with \"ar\"",
+        fn(value) {
+          case
+            value
+            |> string.starts_with("ar")
+          {
+            True -> Ok(Nil)
+            False -> Error("Needs to start with: ar")
+          }
+        },
+      ),
       Ar,
     )
 

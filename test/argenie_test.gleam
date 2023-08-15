@@ -1,8 +1,8 @@
 import gleeunit
 import gleeunit/should
 import argenie.{
-  Argenie, Custom, IntArg, InvalidStringValue, MandatoryMissing, NotInRange,
-  ParseError, ParseErrors, Validation,
+  Argenie, Custom, IntArg, InvalidStringValue, MandatoryMissing, NoValidation,
+  NotInRange, ParseError, ParseErrors, Validation,
 }
 import gleam/option.{None, Option, Some}
 import gleam/string
@@ -58,7 +58,7 @@ fn setup_args() {
   |> argenie.add_string_argument(
     flags.hello,
     Hello("default"),
-    None,
+    NoValidation,
     fn(new_value: String) { Hello(new_value) },
   )
   |> argenie.add_int_argument(
@@ -82,12 +82,12 @@ fn setup_args() {
   |> argenie.add_string_argument(
     flags.no_default,
     NoDefault(None),
-    None,
+    NoValidation,
     fn(new_value: String) { NoDefault(Some(new_value)) },
   )
   |> argenie.add_mandatory_string_argument(
     flags.mandatory,
-    None,
+    NoValidation,
     fn(new_value: String) { Mandatory(new_value) },
   )
   |> argenie.add_bool_argument(
@@ -98,26 +98,32 @@ fn setup_args() {
   |> argenie.add_int_argument(
     flags.big,
     Big(5),
-    argenie.int_validator(fn(value) {
-      case value > 0 {
-        True -> Ok(Nil)
-        False -> Error("Value need to be greater than 0")
-      }
-    }),
+    argenie.int_validator(
+      "> 0",
+      fn(value) {
+        case value > 0 {
+          True -> Ok(Nil)
+          False -> Error("Value need to be greater than 0")
+        }
+      },
+    ),
     fn(new_value) { Big(new_value) },
   )
   |> argenie.add_string_argument(
     flags.ar,
     Ar("argh"),
-    argenie.string_validator(fn(value) {
-      case
-        value
-        |> string.starts_with("ar")
-      {
-        True -> Ok(Nil)
-        False -> Error("Needs to start with: ar")
-      }
-    }),
+    argenie.string_validator(
+      "Value needs to start with \"ar\"",
+      fn(value) {
+        case
+          value
+          |> string.starts_with("ar")
+        {
+          True -> Ok(Nil)
+          False -> Error("Needs to start with: ar")
+        }
+      },
+    ),
     Ar,
   )
 }
@@ -315,7 +321,12 @@ pub fn subcommands_alt2_test() {
   let argenie1 = setup_args()
   let argenie2 =
     argenie.new()
-    |> argenie.add_string_argument("wibble", Wibble("default"), None, Wibble)
+    |> argenie.add_string_argument(
+      "wibble",
+      Wibble("default"),
+      NoValidation,
+      Wibble,
+    )
   let sub_commands =
     argenie.parse2_alt2(
       #(
@@ -365,7 +376,12 @@ pub fn subcommand_case_test() {
   let argenie1 = setup_args()
   let argenie2 =
     argenie.new()
-    |> argenie.add_string_argument("wibble", Wibble("default"), None, Wibble)
+    |> argenie.add_string_argument(
+      "wibble",
+      Wibble("default"),
+      NoValidation,
+      Wibble,
+    )
 
   // TODO: Could this be combined with the parse2, parse3 .. tuple variant to build the tree in a generic way?
   let command_parser = fn(start_arguments) {
