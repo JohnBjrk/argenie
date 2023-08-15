@@ -127,6 +127,8 @@ pub opaque type Argenie(a) {
 }
 
 pub type ArgenieError {
+  // TODO: Remove this if removing parse2_alt2
+  CommandHelp(commands: List(String))
   UnknownArgument
   ParseError(expected_arg_type: ArgType, raw_value: String)
   MandatoryMissing
@@ -142,6 +144,114 @@ pub type ValidationError {
   NotInRange(value: Int, min: Int, max: Int)
   Custom(message: String)
 }
+
+// TODO: These are all different experiments on how to provide a decent api for adding commands
+// The main pain point is that if we allow different flag-types for different commands it will result
+// in a quite cumbersome to use api with a lot of different methods depending on the number of commands
+// or it will force the user code to deal with the commands and then there is no good way to provide
+// built-in help for which commands are available
+pub fn parse2(
+  sub_commands: #(#(String, Argenie(a)), #(String, Argenie(b))),
+  arguments: List(String),
+) -> #(
+  Option(Result(Argenie(a), ParseErrors)),
+  Option(Result(Argenie(b), ParseErrors)),
+) {
+  let #(#(sub_command1, argenie1), #(sub_command2, argenie2)) = sub_commands
+  case arguments {
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command1 -> #(
+      Some(parse(argenie1, sub_command_arguments)),
+      None,
+    )
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command2 -> #(
+      None,
+      Some(parse(argenie2, sub_command_arguments)),
+    )
+  }
+}
+
+pub fn parse2_alt(
+  sub_commands: #(
+    #(String, a, fn(a, List(String)) -> c),
+    #(String, b, fn(b, List(String)) -> d),
+  ),
+  arguments: List(String),
+) -> #(Option(c), Option(d)) {
+  let #(#(sub_command1, argenie1, parse1), #(sub_command2, argenie2, parse2)) =
+    sub_commands
+  case arguments {
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command1 -> #(
+      Some(parse1(argenie1, sub_command_arguments)),
+      None,
+    )
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command2 -> #(
+      None,
+      Some(parse2(argenie2, sub_command_arguments)),
+    )
+  }
+}
+
+pub fn parse2_alt2(
+  sub_commands: #(
+    #(String, a, fn(a, List(String)) -> c, fn(c) -> e),
+    #(String, b, fn(b, List(String)) -> d, fn(d) -> e),
+  ),
+  make_help_error: fn(Result(a, ParseErrors)) -> e,
+  arguments: List(String),
+) -> e {
+  let #(
+    #(sub_command1, argenie1, parse1, make1),
+    #(sub_command2, argenie2, parse2, make2),
+  ) = sub_commands
+  case arguments {
+    ["--help"] ->
+      Error([#("NO_NAME", CommandHelp([sub_command1, sub_command2]))])
+      |> make_help_error
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command1 ->
+      parse1(argenie1, sub_command_arguments)
+      |> make1
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command2 ->
+      parse2(argenie2, sub_command_arguments)
+      |> make2
+  }
+}
+
+pub fn parse1_alt(
+  sub_commands: #(#(String, a, fn(a, List(String)) -> c)),
+  arguments: List(String),
+) -> #(Option(c), Option(d)) {
+  let #(#(sub_command1, argenie1, parse1)) = sub_commands
+  case arguments {
+    [sub_command, ..sub_command_arguments] if sub_command == sub_command1 -> #(
+      Some(parse1(argenie1, sub_command_arguments)),
+      None,
+    )
+  }
+}
+
+pub fn halt_on_error2(
+  parse2_result: #(
+    Option(Result(Argenie(a), ParseErrors)),
+    Option(Result(Argenie(b), ParseErrors)),
+  ),
+) -> #(Option(Argenie(a)), Option(Argenie(b))) {
+  case parse2_result {
+    #(Some(result), None) -> #(
+      result
+      |> halt_on_error
+      |> Some,
+      None,
+    )
+    #(None, Some(result)) -> #(
+      None,
+      result
+      |> halt_on_error
+      |> Some,
+    )
+  }
+}
+
+// TODO: End command experiments
 
 pub fn new() -> Argenie(a) {
   Argenie(map.new())
@@ -233,6 +343,8 @@ pub fn add_mandatory_bool_argument(
   )
 }
 
+// TODO: Maybe rename this one to safe_parse (since it returns a result) and use the name
+// parse for a version that also does halt_on_error
 pub fn parse(
   argenie: Argenie(a),
   arguments: List(String),
@@ -347,6 +459,10 @@ pub fn halt_on_error(argenie_result: Result(Argenie(a), ParseErrors)) {
           }
           Other(message) -> io.println(message)
           UnknownArgument -> io.println("UNKNOWN ARGUMENT")
+
+          // TODO: Remove this if removing parse2_alt2
+          CommandHelp(commands) ->
+            io.println("Command help: " <> string.join(commands, ", "))
         }
       })
       halt(1)
