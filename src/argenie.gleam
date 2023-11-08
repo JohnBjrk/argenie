@@ -1,6 +1,6 @@
 import gleam/list
-import gleam/map.{Map}
-import gleam/option.{None, Option, Some}
+import gleam/map.{type Map}
+import gleam/option.{type Option, None, Some}
 import gleam/regex.{Match}
 import gleam/io
 import gleam/int

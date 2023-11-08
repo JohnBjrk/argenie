@@ -1,6 +1,6 @@
 import argenie.{NoValidation}
 import gleam/io
-import gleam/option.{None, Option, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/erlang
 import gleam/string
 

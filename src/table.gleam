@@ -1,7 +1,7 @@
 import gleam/list
 import gleam/string
 import gleam/int
-import gleam/option.{Option}
+import gleam/option.{type Option}
 import gleam/bit_string
 
 pub fn strip_style(text) {

@@ -1,12 +1,12 @@
 import gleeunit
 import gleeunit/should
 import argenie.{
-  Argenie, Custom, IntArg, InvalidStringValue, MandatoryMissing, NoValidation,
-  NotInRange, ParseError, ParseErrors, Validation,
+  type Argenie, type ParseErrors, Custom, IntArg, InvalidStringValue,
+  MandatoryMissing, NoValidation, NotInRange, ParseError, Validation,
 }
-import gleam/option.{None, Option, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
-import gleam/map.{Map}
+import gleam/map
 
 pub fn main() {
   gleeunit.main()
